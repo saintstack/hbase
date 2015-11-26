@@ -34,6 +34,7 @@ import org.apache.hadoop.hbase.HRegionInfo;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MetaTableAccessor;
 import org.apache.hadoop.hbase.NamespaceDescriptor;
+import org.apache.hadoop.hbase.NamespaceExistException;
 import org.apache.hadoop.hbase.PleaseHoldException;
 import org.apache.hadoop.hbase.ProcedureInfo;
 import org.apache.hadoop.hbase.ServerLoad;
@@ -832,7 +833,7 @@ public class MasterRpcServices extends RSRpcServices
     try {
       return GetNamespaceDescriptorResponse.newBuilder()
         .setNamespaceDescriptor(ProtobufUtil.toProtoNamespaceDescriptor(
-            master.getNamespaceDescriptor(request.getNamespaceName())))
+            master.getClusterSchema().getNamespace(request.getNamespaceName())))
         .build();
     } catch (IOException e) {
       throw new ServiceException(e);
@@ -1120,7 +1121,7 @@ public class MasterRpcServices extends RSRpcServices
     try {
       ListNamespaceDescriptorsResponse.Builder response =
         ListNamespaceDescriptorsResponse.newBuilder();
-      for(NamespaceDescriptor ns: master.listNamespaceDescriptors()) {
+      for(NamespaceDescriptor ns: master.getClusterSchema().getNamespaces()) {
         response.addNamespaceDescriptor(ProtobufUtil.toProtoNamespaceDescriptor(ns));
       }
       return response.build();
@@ -1307,8 +1308,12 @@ public class MasterRpcServices extends RSRpcServices
 
     // ensure namespace exists
       TableName dstTable = TableName.valueOf(request.getSnapshot().getTable());
-      master.getNamespaceDescriptor(dstTable.getNamespaceAsString());
-
+      NamespaceDescriptor nsd = NamespaceDescriptor.create(dstTable.getNamespaceAsString()).build();
+      try {
+        master.getClusterSchema().createNamespace(nsd, HConstants.NO_NONCE, HConstants.NO_NONCE);
+      } catch (NamespaceExistException nee) {
+        if (LOG.isDebugEnabled()) LOG.debug("Namespace " + nsd.getName() + " exists");
+      }
       SnapshotDescription reqSnapshot = request.getSnapshot();
       master.snapshotManager.restoreSnapshot(reqSnapshot);
       return RestoreSnapshotResponse.newBuilder().build();

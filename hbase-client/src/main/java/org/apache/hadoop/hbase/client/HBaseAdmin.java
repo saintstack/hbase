@@ -4353,7 +4353,7 @@ public class HBaseAdmin implements Admin {
             // UnsupportedOperationException aside from looking at the message.
             // anyway, if we fail here we just failover to the compatibility side
             // and that is always a valid solution.
-            LOG.warn("Proc-v2 is unsupported on this master: " + serviceEx.getMessage(), serviceEx);
+            LOG.warn("Proc-v2procResultFound is unsupported on this master: " + serviceEx.getMessage(), serviceEx);
             procResultFound = false;
             return null;
           }
