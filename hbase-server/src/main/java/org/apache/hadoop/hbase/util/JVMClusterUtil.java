@@ -1,4 +1,4 @@
-/**
+/*
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -17,30 +17,30 @@
  * limitations under the License.
  */
 package org.apache.hadoop.hbase.util;
-
-import java.io.InterruptedIOException;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
-
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.master.HMaster;
+import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.master.HMaster;
-import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hbase.thirdparty.com.google.common.base.Preconditions;
 
 /**
  * Utility used running a cluster all in the one JVM.
  */
 @InterfaceAudience.Private
-public class JVMClusterUtil {
+public final class JVMClusterUtil {
   private static final Logger LOG = LoggerFactory.getLogger(JVMClusterUtil.class);
+
+  private JVMClusterUtil() {}
 
   /**
    * Datastructure to hold RegionServer Thread and RegionServer instance
@@ -77,7 +77,6 @@ public class JVMClusterUtil {
    * @param c Configuration to use.
    * @param hrsc Class to create.
    * @param index Used distinguishing the object returned.
-   * @throws IOException
    * @return Region server added.
    */
   public static JVMClusterUtil.RegionServerThread createRegionServerThread(final Configuration c,
@@ -122,7 +121,6 @@ public class JVMClusterUtil {
    * @param c Configuration to use.
    * @param hmc Class to create.
    * @param index Used distinguishing the object returned.
-   * @throws IOException
    * @return Master added.
    */
   public static JVMClusterUtil.MasterThread createMasterThread(final Configuration c,
@@ -160,8 +158,6 @@ public class JVMClusterUtil {
   /**
    * Start the cluster.  Waits until there is a primary master initialized
    * and returns its address.
-   * @param masters
-   * @param regionservers
    * @return Address to use contacting primary master.
    */
   public static String startup(final List<JVMClusterUtil.MasterThread> masters,
@@ -241,10 +237,6 @@ public class JVMClusterUtil {
 
   }
 
-  /**
-   * @param masters
-   * @param regionservers
-   */
   public static void shutdown(final List<MasterThread> masters,
       final List<RegionServerThread> regionservers) {
     LOG.debug("Shutting down HBase Cluster");
@@ -308,18 +300,21 @@ public class JVMClusterUtil {
           if (t.isAlive()) {
             atLeastOneLiveServer = true;
             try {
-              LOG.warn("RegionServerThreads remaining, give one more chance before interrupting");
+              LOG.warn("RegionServerThreads remaining, give one more chance before "
+                + "interrupting; joining " + t.getRegionServer().getServerName() + " for a second");
               t.join(1000);
             } catch (InterruptedException e) {
               wasInterrupted = true;
             }
           }
         }
-        if (!atLeastOneLiveServer) break;
+        if (!atLeastOneLiveServer) {
+          break;
+        }
         for (RegionServerThread t : regionservers) {
           if (t.isAlive()) {
             LOG.warn("RegionServerThreads taking too long to stop, interrupting; thread dump "  +
-              "if > 3 attempts: i=" + i);
+              "if > 3 attempts: i=" + i + "; alive=" + t.getRegionServer().getServerName());
             if (i > 3) {
               Threads.printThreadInfo(System.out, "Thread dump " + t.getName());
             }

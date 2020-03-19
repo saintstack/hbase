@@ -33,7 +33,6 @@ import org.apache.hadoop.hbase.util.RetryCounter;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProtos.RegionStateTransition.TransitionCode;
 
 /**
@@ -44,7 +43,7 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.RegionServerStatusProto
  * with the zk less assignment for 1.x, otherwise it is not possible to do rolling upgrade.
  */
 @InterfaceAudience.Private
-public class UnassignRegionHandler extends EventHandler {
+public final class UnassignRegionHandler extends EventHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(UnassignRegionHandler.class);
 
@@ -56,11 +55,18 @@ public class UnassignRegionHandler extends EventHandler {
   // TODO: not used yet, we still use the old CloseRegionHandler when aborting
   private final boolean abort;
 
+   /**
+    * The target the Region is going to after successful close; usually null as it depends on
+    * context whether this is passed in or not.
+    */
   private final ServerName destination;
 
   private final RetryCounter retryCounter;
 
-  public UnassignRegionHandler(HRegionServer server, String encodedName, long closeProcId,
+  /**
+   * @see #create(HRegionServer, String, long, boolean, ServerName)
+   */
+  private UnassignRegionHandler(HRegionServer server, String encodedName, long closeProcId,
       boolean abort, @Nullable ServerName destination, EventType eventType) {
     super(server, eventType);
     this.encodedName = encodedName;
@@ -85,20 +91,19 @@ public class UnassignRegionHandler extends EventHandler {
         // reportRegionStateTransition, so the HMaster will think the region is online, before we
         // actually open the region, as reportRegionStateTransition is part of the opening process.
         long backoff = retryCounter.getBackoffTimeAndIncrementAttempts();
-        LOG.warn("Received CLOSE for the region: {}, which we are already " +
+        LOG.warn("Received CLOSE for {}, which we are already " +
           "trying to OPEN. try again after {}ms", encodedName, backoff);
         rs.getExecutorService().delayedSubmit(this, backoff, TimeUnit.MILLISECONDS);
       } else {
-        LOG.info("Received CLOSE for the region: {}, which we are already trying to CLOSE," +
-          " but not completed yet", encodedName);
+        LOG.info("Received CLOSE for {}, which we are already trying to CLOSE," +
+          " but is not complete yet", encodedName);
       }
       return;
     }
     HRegion region = rs.getRegion(encodedName);
     if (region == null) {
       LOG.debug(
-        "Received CLOSE for a region {} which is not online, and we're not opening/closing.",
-        encodedName);
+        "Received CLOSE for {} which is not online, and we're not opening/closing", encodedName);
       rs.getRegionsInTransitionInRS().remove(encodedNameBytes, Boolean.FALSE);
       return;
     }
@@ -115,7 +120,7 @@ public class UnassignRegionHandler extends EventHandler {
     if (region.close(abort) == null) {
       // XXX: Is this still possible? The old comment says about split, but now split is done at
       // master side, so...
-      LOG.warn("Can't close region {}, was already closed during close()", regionName);
+      LOG.warn("Can't close {}, was already closed during close()", regionName);
       rs.getRegionsInTransitionInRS().remove(encodedNameBytes, Boolean.FALSE);
       return;
     }
@@ -132,8 +137,8 @@ public class UnassignRegionHandler extends EventHandler {
 
   @Override
   protected void handleException(Throwable t) {
-    LOG.warn("Fatal error occurred while closing region {}, aborting...", encodedName, t);
-    getServer().abort("Failed to close region " + encodedName + " and can not recover", t);
+    LOG.warn("Fatal error occurred while closing {}, aborting...", encodedName, t);
+    getServer().abort("Failed to close " + encodedName + " and can not recover", t);
   }
 
   public static UnassignRegionHandler create(HRegionServer server, String encodedName,

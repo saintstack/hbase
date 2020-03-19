@@ -19,7 +19,6 @@
 package org.apache.hadoop.hbase.regionserver.handler;
 
 import java.io.IOException;
-
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.Server;
 import org.apache.hadoop.hbase.ServerName;
@@ -58,15 +57,16 @@ public class CloseRegionHandler extends EventHandler {
   // If true, the hosting server is aborting.  Region close process is different
   // when we are aborting.
   private final boolean abort;
+
+  /**
+   * The target the Region is going to after successful close; usually null as it depends on
+   * context whether this is passed in or not.
+   */
   private ServerName destination;
 
   /**
    * This method used internally by the RegionServer to close out regions.
-   * @param server
-   * @param rsServices
-   * @param regionInfo
    * @param abort If the regionserver is aborting.
-   * @param destination
    */
   public CloseRegionHandler(final Server server,
       final RegionServerServices rsServices,
@@ -100,7 +100,7 @@ public class CloseRegionHandler extends EventHandler {
       // Check that this region is being served here
       HRegion region = (HRegion)rsServices.getRegion(encodedRegionName);
       if (region == null) {
-        LOG.warn("Received CLOSE for region {} but currently not serving - ignoring", name);
+        LOG.warn("Received CLOSE for {} but currently not serving - ignoring", name);
         // TODO: do better than a simple warning
         return;
       }
@@ -110,14 +110,14 @@ public class CloseRegionHandler extends EventHandler {
         if (region.close(abort) == null) {
           // This region got closed.  Most likely due to a split.
           // The split message will clean up the master state.
-          LOG.warn("Can't close region {}, was already closed during close()", name);
+          LOG.warn("Can't close {}, was already closed during close()", name);
           return;
         }
       } catch (IOException ioe) {
         // An IOException here indicates that we couldn't successfully flush the
         // memstore before closing. So, we need to abort the server and allow
         // the master to split our logs in order to recover the data.
-        server.abort("Unrecoverable exception while closing region " +
+        server.abort("Unrecoverable exception while closing " +
           regionInfo.getRegionNameAsString() + ", still finishing close", ioe);
         throw new RuntimeException(ioe);
       }

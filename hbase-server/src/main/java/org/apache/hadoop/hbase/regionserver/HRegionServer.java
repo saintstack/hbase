@@ -247,9 +247,8 @@ public class HRegionServer extends HasThread implements
   public static boolean TEST_SKIP_REPORTING_TRANSITION = false;
 
   /**
-   * A map from RegionName to current action in progress. Boolean value indicates:
-   * true - if open region action in progress
-   * false - if close region action in progress
+   * A map from encoded region name as bytes to current action in progress. Boolean value indicates:
+   * TRUE if open region action in progress, and FALSE if close region action in progress
    */
   private final ConcurrentMap<byte[], Boolean> regionsInTransitionInRS =
     new ConcurrentSkipListMap<>(Bytes.BYTES_COMPARATOR);
@@ -1010,7 +1009,7 @@ public class HRegionServer extends HasThread implements
           } else if (!this.stopping) {
             this.stopping = true;
             LOG.info("Closing user regions");
-            closeUserRegions(this.abortRequested);
+            closeUserRegions(isAborted());
           } else {
             boolean allUserRegionsOffline = areAllUserRegionsOffline();
             if (allUserRegionsOffline) {
@@ -1026,7 +1025,7 @@ public class HRegionServer extends HasThread implements
               // Make sure all regions have been closed -- some regions may
               // have not got it because we were splitting at the time of
               // the call to closeUserRegions.
-              closeUserRegions(this.abortRequested);
+              closeUserRegions(isAborted());
             }
             LOG.debug("Waiting on " + getOnlineRegionsAsPrintableString());
           }
@@ -1081,18 +1080,18 @@ public class HRegionServer extends HasThread implements
 
     // Stop the snapshot and other procedure handlers, forcefully killing all running tasks
     if (rspmHost != null) {
-      rspmHost.stop(this.abortRequested || this.killed);
+      rspmHost.stop(isAborted() || this.killed);
     }
 
     if (this.killed) {
       // Just skip out w/o closing regions.  Used when testing.
-    } else if (abortRequested) {
+    } else if (isAborted()) {
       if (this.dataFsOk) {
-        closeUserRegions(abortRequested); // Don't leave any open file handles
+        closeUserRegions(isAborted()); // Don't leave any open file handles
       }
       LOG.info("aborting server " + this.serverName);
     } else {
-      closeUserRegions(abortRequested);
+      closeUserRegions(isAborted());
       LOG.info("stopping server " + this.serverName);
     }
 
@@ -1108,17 +1107,17 @@ public class HRegionServer extends HasThread implements
 
     // Closing the compactSplit thread before closing meta regions
     if (!this.killed && containsMetaTableRegions()) {
-      if (!abortRequested || this.dataFsOk) {
+      if (!isAborted() || this.dataFsOk) {
         if (this.compactSplitThread != null) {
           this.compactSplitThread.join();
           this.compactSplitThread = null;
         }
-        closeMetaTableRegions(abortRequested);
+        closeMetaTableRegions(isAborted());
       }
     }
 
     if (!this.killed && this.dataFsOk) {
-      waitOnAllRegionsToClose(abortRequested);
+      waitOnAllRegionsToClose(isAborted());
       LOG.info("stopping server " + this.serverName + "; all regions closed.");
     }
 
@@ -1133,7 +1132,7 @@ public class HRegionServer extends HasThread implements
 
     // flag may be changed when closing regions throws exception.
     if (this.dataFsOk) {
-      shutdownWAL(!abortRequested);
+      shutdownWAL(!isAborted());
     }
 
     // Make sure the proxy is down.
@@ -2439,13 +2438,17 @@ public class HRegionServer extends HasThread implements
    * it is using and without notifying the master. Used unit testing and on
    * catastrophic events such as HDFS is yanked out from under hbase or we OOME.
    *
-   * @param reason
-   *          the reason we are aborting
-   * @param cause
-   *          the exception that caused the abort, or null
+   * @param reason the reason we are aborting
+   * @param cause the exception that caused the abort, or null
    */
   @Override
   public void abort(String reason, Throwable cause) {
+    if (isAborted()) {
+      // Don't run multiple aborts; fills logs w/ spew.
+      LOG.info("Redundant abort requested; reason={}", reason, cause);
+      return;
+    }
+
     String msg = "***** ABORTING region server " + this + ": " + reason + " *****";
     if (cause != null) {
       LOG.error(HBaseMarkers.FATAL, msg, cause);
@@ -3185,14 +3188,20 @@ public class HRegionServer extends HasThread implements
    *   If a close was in progress, this new request will be ignored, and an exception thrown.
    * </p>
    *
-   * @param encodedName Region to close
    * @param abort True if we are aborting
-   * @return True if closed a region.
+   * @param destination Where the Region is being moved too... maybe null if unknown.
+   * @return True if we scheduled the chose of a region (Actual close will run in
+   *   background in executor).
    * @throws NotServingRegionException if the region is not online
    */
-  protected boolean closeRegion(String encodedName, final boolean abort, final ServerName sn)
+  protected boolean closeRegion(String encodedName, final boolean abort,
+        final ServerName destination)
       throws NotServingRegionException {
-    //Check for permissions to close.
+    // TODO: Check for perms to close.
+    // Ideally we'd shove a bunch of the below logic into CloseRegionHandler only we have to do
+    // some handling inline w/ the request such as throwing NotServingRegionException if we
+    // are not hosting so client gets the message directly; can't do this from inside an
+    // executor service.
     HRegion actualRegion = this.getRegion(encodedName);
     // Can be null if we're calling close on a region that's not online
     if ((actualRegion != null) && (actualRegion.getCoprocessorHost() != null)) {
@@ -3204,42 +3213,44 @@ public class HRegionServer extends HasThread implements
       }
     }
 
-    // previous can come back 'null' if not in map.
+    // This getting from this.regionsInTransitionInRS and checking the return is done in a few
+    // places, mostly over in Handlers; this.regionsInTransitionInRS is how we ensure we don't
+    // clash opens/closes or duplicate closes when one is ongoing. FYI.
+    // Previous can come back 'null' if not in the map.
     final Boolean previous = this.regionsInTransitionInRS.putIfAbsent(Bytes.toBytes(encodedName),
         Boolean.FALSE);
 
     if (Boolean.TRUE.equals(previous)) {
-      LOG.info("Received CLOSE for the region:" + encodedName + " , which we are already " +
+      LOG.info("Received CLOSE for " + encodedName + " which we are already " +
           "trying to OPEN. Cancelling OPENING.");
       if (!regionsInTransitionInRS.replace(Bytes.toBytes(encodedName), previous, Boolean.FALSE)) {
         // The replace failed. That should be an exceptional case, but theoretically it can happen.
         // We're going to try to do a standard close then.
-        LOG.warn("The opening for region " + encodedName + " was done before we could cancel it." +
-            " Doing a standard close now");
-        return closeRegion(encodedName, abort, sn);
+        LOG.warn("The opening for " + encodedName + " was done before we could cancel it." +
+            " running a new close attempt");
+        return closeRegion(encodedName, abort, destination);
       }
       // Let's get the region from the online region list again
       actualRegion = this.getRegion(encodedName);
       if (actualRegion == null) { // If already online, we still need to close it.
-        LOG.info("The opening previously in progress has been cancelled by a CLOSE request.");
+        LOG.info("{} is not ONLINE", encodedName);
         // The master deletes the znode when it receives this exception.
-        throw new NotServingRegionException("The region " + encodedName +
-          " was opening but not yet served. Opening is cancelled.");
+        throw new NotServingRegionException(encodedName +
+          " was opening but not yet served; opening is cancelled.");
       }
     } else if (previous == null) {
       LOG.info("Received CLOSE for {}", encodedName);
     } else if (Boolean.FALSE.equals(previous)) {
-      LOG.info("Received CLOSE for the region: " + encodedName +
-        ", which we are already trying to CLOSE, but not completed yet");
+      LOG.info("Received CLOSE for " + encodedName +
+        " which we are already trying to CLOSE, but not complete yet");
       return true;
     }
 
     if (actualRegion == null) {
-      LOG.debug("Received CLOSE for a region which is not online, and we're not opening.");
+      LOG.debug("Received CLOSE for {} which is not online and we're not opening", encodedName);
       this.regionsInTransitionInRS.remove(Bytes.toBytes(encodedName));
       // The master deletes the znode when it receives this exception.
-      throw new NotServingRegionException("The region " + encodedName +
-          " is not online, and is not opening.");
+      throw new NotServingRegionException(encodedName + " is not online and is not opening.");
     }
 
     CloseRegionHandler crh;
@@ -3247,7 +3258,7 @@ public class HRegionServer extends HasThread implements
     if (hri.isMetaRegion()) {
       crh = new CloseMetaHandler(this, this, hri, abort);
     } else {
-      crh = new CloseRegionHandler(this, this, hri, abort, sn);
+      crh = new CloseRegionHandler(this, this, hri, abort, destination);
     }
     this.executorService.submit(crh);
     return true;
@@ -3833,6 +3844,7 @@ public class HRegionServer extends HasThread implements
    *
    * @param procId the id of the open/close region procedure
    * @return true if the procedure can be submitted.
+   * @see #finishRegionProcedure
    */
   boolean submitRegionProcedure(long procId) {
     if (procId == -1) {
