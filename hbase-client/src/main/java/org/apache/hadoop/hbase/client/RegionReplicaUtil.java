@@ -31,7 +31,6 @@ import org.apache.yetus.audience.InterfaceAudience;
  */
 @InterfaceAudience.Private
 public class RegionReplicaUtil {
-
   /**
    * Whether or not the secondary region will wait for observing a flush / region open event
    * from the primary region via async wal replication before enabling read requests. Since replayed
@@ -46,6 +45,13 @@ public class RegionReplicaUtil {
   protected static final boolean DEFAULT_REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH = true;
 
   /**
+   * Same as {@link #REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH_CONF_KEY} but for hbase:meta.
+   */
+  public static final String META_REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH_CONF_KEY
+    = "hbase.region.meta.replica.wait.for.primary.flush";
+  protected static final boolean DEFAULT_META_REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH = true;
+
+  /**
    * The default replicaId for the region
    */
   static final int DEFAULT_REPLICA_ID = 0;
@@ -55,7 +61,6 @@ public class RegionReplicaUtil {
    * RegionInfo's correspond to a range of a table, but more than one
    * "instance" of the same range can be deployed which are differentiated by
    * the replicaId.
-   * @param regionInfo
    * @param replicaId the replicaId to use
    * @return an RegionInfo object corresponding to the same range (table, start and
    * end key), but for the given replicaId.
@@ -145,8 +150,7 @@ public class RegionReplicaUtil {
   }
 
   /**
-   * Create any replicas for the regions (the default replicas that was already created is passed to
-   * the method)
+   * Create any replicas for Regions (the default replicas already created are passed to the method)
    * @param regions existing regions
    * @param oldReplicaCount existing replica count
    * @param newReplicaCount updated replica count due to modify table

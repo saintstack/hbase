@@ -193,8 +193,8 @@ class MetaFixer {
 
           // Setup replication for region replicas if needed
           if (td.getRegionReplication() > 1) {
-            ServerRegionReplicaUtil.setupRegionReplicaReplication(
-              masterServices.getConfiguration());
+            ServerRegionReplicaUtil.setupRegionReplicaReplication(masterServices.getConfiguration(),
+              td.getTableName());
           }
           return Either.<List<RegionInfo>, IOException>ofLeft(newRegions);
         } catch (IOException e) {

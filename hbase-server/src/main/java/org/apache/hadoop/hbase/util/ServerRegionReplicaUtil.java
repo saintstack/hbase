@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -23,6 +23,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.ReplicationPeerNotFoundException;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
@@ -32,9 +33,12 @@ import org.apache.hadoop.hbase.io.HFileLink;
 import org.apache.hadoop.hbase.io.Reference;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
+import org.apache.hadoop.hbase.replication.ReplicationPeer;
 import org.apache.hadoop.hbase.replication.ReplicationPeerConfig;
+import org.apache.hadoop.hbase.replication.ReplicationPeerConfigBuilder;
 import org.apache.hadoop.hbase.replication.regionserver.RegionReplicaReplicationEndpoint;
 import org.apache.hadoop.hbase.zookeeper.ZKConfig;
+import org.apache.hbase.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,7 +62,16 @@ public class ServerRegionReplicaUtil extends RegionReplicaUtil {
   public static final String REGION_REPLICA_REPLICATION_CONF_KEY
     = "hbase.region.replica.replication.enabled";
   private static final boolean DEFAULT_REGION_REPLICA_REPLICATION = false;
-  private static final String REGION_REPLICA_REPLICATION_PEER = "region_replica_replication";
+  public static final String REGION_REPLICA_REPLICATION_PEER = "region_replica_replication";
+
+  /**
+   * Same as for {@link #REGION_REPLICA_REPLICATION_CONF_KEY} but for hbase:meta.
+   */
+  public static final String META_REGION_REPLICA_REPLICATION_CONF_KEY
+    = "hbase.region.meta.replica.replication.enabled";
+  private static final boolean DEFAULT_META_REGION_REPLICA_REPLICATION = false;
+  public static final String META_REGION_REPLICA_REPLICATION_PEER =
+    "meta_region_replica_replication";
 
   /**
    * Enables or disables refreshing store files of secondary region replicas when the memory is
@@ -117,7 +130,6 @@ public class ServerRegionReplicaUtil extends RegionReplicaUtil {
    * files of the primary region, so an HFileLink is used to construct the StoreFileInfo. This
    * way ensures that the secondary will be able to continue reading the store files even if
    * they are moved to archive after compaction
-   * @throws IOException
    */
   public static StoreFileInfo getStoreFileInfo(Configuration conf, FileSystem fs,
       RegionInfo regionInfo, RegionInfo regionInfoForFs, String familyName, Path path)
@@ -156,43 +168,55 @@ public class ServerRegionReplicaUtil extends RegionReplicaUtil {
   /**
    * Create replication peer for replicating to region replicas if needed.
    * @param conf configuration to use
-   * @throws IOException
    */
-  public static void setupRegionReplicaReplication(Configuration conf) throws IOException {
-    if (!isRegionReplicaReplicationEnabled(conf)) {
+  public static void setupRegionReplicaReplication(Configuration conf, TableName tn)
+      throws IOException {
+    if (!isRegionReplicaReplicationEnabled(conf, tn)) {
       return;
     }
+    String peerId = tn.isSystemTable()?
+      META_REGION_REPLICA_REPLICATION_PEER: REGION_REPLICA_REPLICATION_PEER;
 
     try (Connection connection = ConnectionFactory.createConnection(conf);
       Admin admin = connection.getAdmin()) {
       ReplicationPeerConfig peerConfig = null;
       try {
-        peerConfig = admin.getReplicationPeerConfig(REGION_REPLICA_REPLICATION_PEER);
+        peerConfig = admin.getReplicationPeerConfig(peerId);
       } catch (ReplicationPeerNotFoundException e) {
-        LOG.warn(
-          "Region replica replication peer id=" + REGION_REPLICA_REPLICATION_PEER + " not exist",
-          e);
+        LOG.warn("Region replica peer id={} does not exist", peerId, e);
       }
 
       if (peerConfig == null) {
-        LOG.info("Region replica replication peer id=" + REGION_REPLICA_REPLICATION_PEER
-          + " not exist. Creating...");
-        peerConfig = new ReplicationPeerConfig();
-        peerConfig.setClusterKey(ZKConfig.getZooKeeperClusterKey(conf));
-        peerConfig.setReplicationEndpointImpl(RegionReplicaReplicationEndpoint.class.getName());
-        admin.addReplicationPeer(REGION_REPLICA_REPLICATION_PEER, peerConfig);
+        LOG.info("Region Replica peer id={} does not exist; creating...", peerId);
+        peerConfig = ReplicationPeerConfig.newBuilder().
+          setClusterKey(ZKConfig.getZooKeeperClusterKey(conf)).
+          setReplicationEndpointImpl(RegionReplicaReplicationEndpoint.class.getName()).build();
+        admin.addReplicationPeer(peerId, peerConfig);
       }
     }
   }
 
-  public static boolean isRegionReplicaReplicationEnabled(Configuration conf) {
-    return conf.getBoolean(REGION_REPLICA_REPLICATION_CONF_KEY,
-      DEFAULT_REGION_REPLICA_REPLICATION);
+  public static boolean isRegionReplicaReplicationEnabled(Configuration conf, TableName tn) {
+    return TableName.isMetaTableName(tn)?
+      conf.getBoolean(META_REGION_REPLICA_REPLICATION_CONF_KEY,
+        DEFAULT_META_REGION_REPLICA_REPLICATION):
+      conf.getBoolean(REGION_REPLICA_REPLICATION_CONF_KEY, DEFAULT_REGION_REPLICA_REPLICATION);
+  }
+
+  public static boolean isRegionReplicaWaitForPrimaryFlushEnabled(Configuration conf,
+      TableName tn) {
+    return TableName.isMetaTableName(tn)? isMetaRegionReplicaWaitForPrimaryFlushEnabled(conf):
+      isRegionReplicaWaitForPrimaryFlushEnabled(conf);
   }
 
   public static boolean isRegionReplicaWaitForPrimaryFlushEnabled(Configuration conf) {
     return conf.getBoolean(REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH_CONF_KEY,
       DEFAULT_REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH);
+  }
+
+  public static boolean isMetaRegionReplicaWaitForPrimaryFlushEnabled(Configuration conf) {
+    return conf.getBoolean(META_REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH_CONF_KEY,
+      DEFAULT_META_REGION_REPLICA_WAIT_FOR_PRIMARY_FLUSH);
   }
 
   public static boolean isRegionReplicaStoreFileRefreshEnabled(Configuration conf) {
@@ -204,12 +228,4 @@ public class ServerRegionReplicaUtil extends RegionReplicaUtil {
     return conf.getDouble(REGION_REPLICA_STORE_FILE_REFRESH_MEMSTORE_MULTIPLIER,
       DEFAULT_REGION_REPLICA_STORE_FILE_REFRESH_MEMSTORE_MULTIPLIER);
   }
-
-  /**
-   * Return the peer id used for replicating to secondary region replicas
-   */
-  public static String getReplicationPeerId() {
-    return REGION_REPLICA_REPLICATION_PEER;
-  }
-
 }

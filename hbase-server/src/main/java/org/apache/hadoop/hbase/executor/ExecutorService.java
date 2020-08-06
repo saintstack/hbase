@@ -1,5 +1,4 @@
-/**
- *
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -32,12 +31,10 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-
 import org.apache.hadoop.hbase.monitoring.ThreadMonitoring;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.hbase.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hbase.thirdparty.com.google.common.collect.Lists;
 import org.apache.hbase.thirdparty.com.google.common.collect.Maps;
@@ -122,8 +119,11 @@ public class ExecutorService {
   }
 
   Executor getExecutor(String name) {
-    Executor executor = this.executorMap.get(name);
-    return executor;
+    return this.executorMap.get(name);
+  }
+
+  public boolean hasExecutor(final EventType type) {
+    return getExecutor(type.getExecutorServiceType()) != null;
   }
 
   @VisibleForTesting
@@ -215,7 +215,6 @@ public class ExecutorService {
 
     /**
      * Submit the event to the queue for handling.
-     * @param event
      */
     void submit(final EventHandler event) {
       // If there is a listener for this type, make sure we call the before
@@ -283,10 +282,9 @@ public class ExecutorService {
     }
 
     /**
-     * @return a map of the threads currently running tasks
-     * inside this executor. Each key is an active thread,
-     * and the value is the task that is currently running.
-     * Note that this is not a stable snapshot of the map.
+     * @return a map of the threads currently running tasks inside this executor. Each key is an
+     *    active thread, and the value is the task that is currently running. Note that this is not
+     *    a stable snapshot of the map.
      */
     public ConcurrentMap<Thread, Runnable> getRunningTasks() {
       return running;
