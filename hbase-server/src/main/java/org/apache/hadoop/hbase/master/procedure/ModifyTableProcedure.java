@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -24,7 +24,6 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-
 import org.apache.hadoop.hbase.ConcurrentTableModificationException;
 import org.apache.hadoop.hbase.DoNotRetryIOException;
 import org.apache.hadoop.hbase.HBaseIOException;
@@ -48,7 +47,6 @@ import org.apache.hadoop.hbase.util.ServerRegionReplicaUtil;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.hadoop.hbase.shaded.protobuf.ProtobufUtil;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProcedureProtos;
 import org.apache.hadoop.hbase.shaded.protobuf.generated.MasterProcedureProtos.ModifyTableState;
@@ -78,13 +76,12 @@ public class ModifyTableProcedure
   }
 
   public ModifyTableProcedure(final MasterProcedureEnv env, final TableDescriptor htd)
-  throws HBaseIOException {
+      throws HBaseIOException {
     this(env, htd, null);
   }
 
   public ModifyTableProcedure(final MasterProcedureEnv env, final TableDescriptor htd,
-      final ProcedurePrepareLatch latch)
-  throws HBaseIOException {
+      final ProcedurePrepareLatch latch) throws HBaseIOException {
     this(env, htd, latch, null, false);
   }
 
@@ -247,7 +244,8 @@ public class ModifyTableProcedure
     MasterProcedureProtos.ModifyTableStateData modifyTableMsg =
         serializer.deserialize(MasterProcedureProtos.ModifyTableStateData.class);
     setUser(MasterProcedureUtil.toUserInfo(modifyTableMsg.getUserInfo()));
-    modifiedTableDescriptor = ProtobufUtil.toTableDescriptor(modifyTableMsg.getModifiedTableSchema());
+    modifiedTableDescriptor =
+      ProtobufUtil.toTableDescriptor(modifyTableMsg.getModifiedTableSchema());
     deleteColumnFamilyInModify = modifyTableMsg.getDeleteColumnFamilyInModify();
     shouldCheckDescriptor = modifyTableMsg.hasShouldCheckDescriptor()
         ? modifyTableMsg.getShouldCheckDescriptor() : false;
@@ -271,7 +269,6 @@ public class ModifyTableProcedure
   /**
    * Check conditions before any real action of modifying a table.
    * @param env MasterProcedureEnv
-   * @throws IOException
    */
   private void prepareModify(final MasterProcedureEnv env) throws IOException {
     // Checks whether the table exists
@@ -303,7 +300,6 @@ public class ModifyTableProcedure
       this.unmodifiedTableDescriptor =
           env.getMasterServices().getTableDescriptors().get(getTableName());
     }
-
     if (env.getMasterServices().getTableStateManager()
         .isTableState(getTableName(), TableState.State.ENABLED)) {
       if (modifiedTableDescriptor.getRegionReplication() != unmodifiedTableDescriptor
@@ -339,8 +335,6 @@ public class ModifyTableProcedure
    * Action before modifying table.
    * @param env MasterProcedureEnv
    * @param state the procedure state
-   * @throws IOException
-   * @throws InterruptedException
    */
   private void preModify(final MasterProcedureEnv env, final ModifyTableState state)
       throws IOException, InterruptedException {
@@ -358,8 +352,6 @@ public class ModifyTableProcedure
 
   /**
    * Removes from hdfs the families that are not longer present in the new table descriptor.
-   * @param env MasterProcedureEnv
-   * @throws IOException
    */
   private void deleteFromFs(final MasterProcedureEnv env,
       final TableDescriptor oldTableDescriptor, final TableDescriptor newTableDescriptor)
@@ -379,8 +371,6 @@ public class ModifyTableProcedure
 
   /**
    * update replica column families if necessary.
-   * @param env MasterProcedureEnv
-   * @throws IOException
    */
   private void updateReplicaColumnsIfNeeded(
     final MasterProcedureEnv env,
@@ -432,8 +422,6 @@ public class ModifyTableProcedure
    * Action after modifying table.
    * @param env MasterProcedureEnv
    * @param state the procedure state
-   * @throws IOException
-   * @throws InterruptedException
    */
   private void postModify(final MasterProcedureEnv env, final ModifyTableState state)
       throws IOException, InterruptedException {
@@ -444,8 +432,6 @@ public class ModifyTableProcedure
    * Coprocessor Action.
    * @param env MasterProcedureEnv
    * @param state the procedure state
-   * @throws IOException
-   * @throws InterruptedException
    */
   private void runCoprocessorAction(final MasterProcedureEnv env, final ModifyTableState state)
       throws IOException, InterruptedException {
