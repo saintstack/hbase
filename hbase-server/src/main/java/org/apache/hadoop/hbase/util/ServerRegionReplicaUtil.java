@@ -36,6 +36,7 @@ import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
 import org.apache.hadoop.hbase.replication.ReplicationPeerConfig;
 import org.apache.hadoop.hbase.replication.regionserver.RegionReplicaReplicationEndpoint;
 import org.apache.hadoop.hbase.zookeeper.ZKConfig;
+import org.apache.hadoop.hdfs.util.ByteArrayManager;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -198,10 +199,17 @@ public class ServerRegionReplicaUtil extends RegionReplicaUtil {
    * @return True if Region Read Replica is enabled for <code>tn</code>.
    */
   public static boolean isRegionReplicaReplicationEnabled(Configuration conf, TableName tn) {
-    return TableName.isMetaTableName(tn)?
-      conf.getBoolean(META_REGION_REPLICA_REPLICATION_CONF_KEY,
-        DEFAULT_META_REGION_REPLICA_REPLICATION):
+    return isMetaRegionReplicaReplicationEnabled(conf, tn) ||
       conf.getBoolean(REGION_REPLICA_REPLICATION_CONF_KEY, DEFAULT_REGION_REPLICA_REPLICATION);
+  }
+
+  /**
+   * @return True if hbase:meta Region Read Replica is enabled.
+   */
+  public static boolean isMetaRegionReplicaReplicationEnabled(Configuration conf, TableName tn) {
+    return TableName.isMetaTableName(tn) &&
+      conf.getBoolean(META_REGION_REPLICA_REPLICATION_CONF_KEY,
+        DEFAULT_META_REGION_REPLICA_REPLICATION);
   }
 
   /**
