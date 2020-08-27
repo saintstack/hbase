@@ -138,7 +138,7 @@ public class AssignRegionHandler extends EventHandler {
         // special ReplicationSource -- see ReplicationSourceManager and ReplicationSourceFactory.
         // See unassign where we remove the special peer if the Region moves.
         rs.getReplicationSourceService().getReplicationManager().
-          addPeer(ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_CONF_KEY);
+          addSource(ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_PEER);
       }
     } catch (IOException e) {
       cleanUpAndReportFailure(e);

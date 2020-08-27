@@ -125,7 +125,7 @@ public class UnassignRegionHandler extends EventHandler {
       // If hbase:meta read replicas enabled, remove special peer for hbase:meta Regions only.
       // See assign region handler where we install the special peer on open.
       rs.getReplicationSourceService().getReplicationManager().
-        removePeer(ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_CONF_KEY);
+        removeSource(ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_PEER);
     }
     if (!rs.reportRegionStateTransition(
       new RegionStateTransitionContext(TransitionCode.CLOSED, HConstants.NO_SEQNUM, closeProcId,
