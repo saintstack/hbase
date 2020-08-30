@@ -64,10 +64,10 @@ import org.apache.hadoop.hbase.util.Pair;
 import org.apache.hadoop.hbase.util.Threads;
 import org.apache.hadoop.hbase.wal.AbstractFSWALProvider;
 import org.apache.hadoop.hbase.wal.WAL.Entry;
-import org.apache.hbase.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.apache.hbase.thirdparty.com.google.common.annotations.VisibleForTesting;
 import org.apache.hbase.thirdparty.com.google.common.collect.Lists;
 
 /**
@@ -83,7 +83,6 @@ import org.apache.hbase.thirdparty.com.google.common.collect.Lists;
  */
 @InterfaceAudience.Private
 public class ReplicationSource implements ReplicationSourceInterface {
-
   private static final Logger LOG = LoggerFactory.getLogger(ReplicationSource.class);
   // Queues of logs to process, entry in format of walGroupId->queue,
   // each presents a queue for one wal group
@@ -191,7 +190,7 @@ public class ReplicationSource implements ReplicationSourceInterface {
   public void init(Configuration conf, FileSystem fs, ReplicationSourceManager manager,
       ReplicationQueueStorage queueStorage, ReplicationPeer replicationPeer, Server server,
       String queueId, UUID clusterId, WALFileLengthProvider walFileLengthProvider,
-      MetricsSource metrics) throws IOException {
+      MetricsSource metrics) {
     this.server = server;
     this.conf = HBaseConfiguration.create(conf);
     this.waitOnEndpointSeconds =
@@ -357,14 +356,9 @@ public class ReplicationSource implements ReplicationSourceInterface {
     ReplicationSourceShipper worker = createNewShipper(walGroupId, queue);
     ReplicationSourceShipper extant = workerThreads.putIfAbsent(walGroupId, worker);
     if (extant != null) {
-      if(LOG.isDebugEnabled()) {
-        LOG.debug("{} Someone has beat us to start a worker thread for wal group {}", logPeerId(),
-          walGroupId);
-      }
+        LOG.debug("{} preempted start of worker walGroupId={}", logPeerId(), walGroupId);
     } else {
-      if(LOG.isDebugEnabled()) {
-        LOG.debug("{} Starting up worker for wal group {}", logPeerId(), walGroupId);
-      }
+      LOG.debug("{} starting worker for walGroupId={}", logPeerId(), walGroupId);
       ReplicationSourceWALReader walReader =
         createNewWALReader(walGroupId, queue, worker.getStartPosition());
       Threads.setDaemonThreadRunning(walReader, Thread.currentThread().getName() +
@@ -435,8 +429,7 @@ public class ReplicationSource implements ReplicationSourceInterface {
 
   /**
    * Call after {@link #initializeWALEntryFilter(UUID)} else it will be null.
-   * @return The WAL Entry Filter Chain this ReplicationSource will use on WAL files filtering
-   * out WALEntry edits.
+   * @return WAL Entry Filter Chain to use on WAL files filtering *out* WALEntry edits.
    */
   @VisibleForTesting
   WALEntryFilter getWalEntryFilter() {
@@ -575,7 +568,7 @@ public class ReplicationSource implements ReplicationSourceInterface {
     if (!this.isSourceActive()) {
       return;
     }
-    LOG.info("{} Source: {}, is now replicating from cluster: {}; to peer cluster: {};",
+    LOG.info("{} queueId={} is replicating from cluster={} to cluster={}",
       logPeerId(), this.replicationQueueInfo.getQueueId(), clusterId, peerClusterId);
 
     initializeWALEntryFilter(peerClusterId);
@@ -799,6 +792,6 @@ public class ReplicationSource implements ReplicationSourceInterface {
   }
 
   private String logPeerId(){
-    return "[Source for peer " + this.getPeerId() + "]:";
+    return "peerId=" + this.getPeerId() + ", ";
   }
 }

@@ -20,7 +20,6 @@ package org.apache.hadoop.hbase.replication.regionserver;
 import java.util.Collections;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.replication.ReplicationQueueInfo;
-import org.apache.hadoop.hbase.util.ServerRegionReplicaUtil;
 import org.apache.hadoop.hbase.wal.AbstractFSWALProvider;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
@@ -37,13 +36,19 @@ public final class ReplicationSourceFactory {
   private ReplicationSourceFactory() {}
 
   static ReplicationSourceInterface create(Configuration conf, String queueId) {
-    // Check for the marker used to enable replication of hbase:meta for region read replicas.
-    // There is no queue recovery when hbase:meta region read replicas so no need to check zk.
-    if (ServerRegionReplicaUtil.isMetaRegionReplicaReplicationPeer(queueId)) {
+    // Check for the marker name used to enable a replication source for hbase:meta for region read
+    // replicas. There is no peer nor use of replication storage nor need for queue recovery when
+    // hbase:meta region read replicas.
+    if (ReplicationSourceManager.META_REGION_REPLICA_REPLICATION_SOURCE.equals(queueId)) {
       // Create ReplicationSource that only reads hbase:meta WAL files and that lets through
-      // all WALEdits found in these WALs.
+      // all WALEdits found in these WALs. ALSO, it does NOT persist to storage intentionally.
       return new ReplicationSource(p -> AbstractFSWALProvider.isMetaFile(p),
-        Collections.emptyList());
+          Collections.emptyList()) {
+        @Override public boolean isQueueStored() {
+          // Do NOT persist queues to the replication store.
+          return false;
+        }
+      };
     }
     ReplicationQueueInfo replicationQueueInfo = new ReplicationQueueInfo(queueId);
     boolean queueRecovered = replicationQueueInfo.isQueueRecovered();

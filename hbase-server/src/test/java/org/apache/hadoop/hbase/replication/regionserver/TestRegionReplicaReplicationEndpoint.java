@@ -242,6 +242,9 @@ public class TestRegionReplicaReplicationEndpoint {
     }
   }
 
+  /**
+   * Used by this test and others.
+   */
   private void verifyReplication(TableName tableName, int regionReplication,
       final int startRow, final int endRow) throws Exception {
     verifyReplication(tableName, regionReplication, startRow, endRow, true);

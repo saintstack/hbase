@@ -20,7 +20,9 @@ package org.apache.hadoop.hbase.regionserver.handler;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.executor.EventHandler;
@@ -30,8 +32,10 @@ import org.apache.hadoop.hbase.regionserver.HRegionServer;
 import org.apache.hadoop.hbase.regionserver.Region;
 import org.apache.hadoop.hbase.regionserver.RegionServerServices.PostOpenDeployContext;
 import org.apache.hadoop.hbase.regionserver.RegionServerServices.RegionStateTransitionContext;
+import org.apache.hadoop.hbase.regionserver.wal.WALActionsListener;
 import org.apache.hadoop.hbase.util.RetryCounter;
 import org.apache.hadoop.hbase.util.ServerRegionReplicaUtil;
+import org.apache.hadoop.hbase.wal.WAL;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -130,16 +134,13 @@ public class AssignRegionHandler extends EventHandler {
       }
       // pass null for the last parameter, which used to be a CancelableProgressable, as now the
       // opening can not be interrupted by a close request any more.
-      region = HRegion.openHRegion(regionInfo, htd, rs.getWAL(regionInfo), rs.getConfiguration(),
-        rs, null);
-      if (ServerRegionReplicaUtil.isMetaRegionReplicaReplicationEnabled(rs.getConfiguration(),
-          region.getTableDescriptor().getTableName())) {
-        // If hbase:meta read replicas enabled, add special peer which will install
-        // special ReplicationSource -- see ReplicationSourceManager and ReplicationSourceFactory.
-        // See unassign where we remove the special peer if the Region moves.
-        rs.getReplicationSourceService().getReplicationManager().
-          addSource(ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_PEER);
+      Configuration conf = rs.getConfiguration();
+      TableName tn = htd.getTableName();
+      if (ServerRegionReplicaUtil.isMetaRegionReplicaReplicationEnabled(conf, tn)) {
+        // Add the hbase:meta replication source.
+        rs.getReplicationSourceService().getReplicationManager().addHBaseMetaSource();
       }
+      region = HRegion.openHRegion(regionInfo, htd, rs.getWAL(regionInfo), conf, rs, null);
     } catch (IOException e) {
       cleanUpAndReportFailure(e);
       return;
@@ -176,7 +177,7 @@ public class AssignRegionHandler extends EventHandler {
       long openProcId, TableDescriptor tableDesc, long masterSystemTime) {
     EventType eventType;
     if (regionInfo.isMetaRegion()) {
-      eventType = EventType.M_RS_CLOSE_META;
+      eventType = EventType.M_RS_OPEN_META;
     } else if (regionInfo.getTable().isSystemTable() ||
       (tableDesc != null && tableDesc.getPriority() >= HConstants.ADMIN_QOS)) {
       eventType = EventType.M_RS_OPEN_PRIORITY_REGION;

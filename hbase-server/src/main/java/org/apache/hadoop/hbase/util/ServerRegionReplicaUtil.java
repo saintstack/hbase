@@ -19,6 +19,9 @@
 package org.apache.hadoop.hbase.util;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -33,7 +36,9 @@ import org.apache.hadoop.hbase.io.HFileLink;
 import org.apache.hadoop.hbase.io.Reference;
 import org.apache.hadoop.hbase.regionserver.HRegion;
 import org.apache.hadoop.hbase.regionserver.StoreFileInfo;
+import org.apache.hadoop.hbase.replication.ReplicationPeer;
 import org.apache.hadoop.hbase.replication.ReplicationPeerConfig;
+import org.apache.hadoop.hbase.replication.ReplicationPeerConfigListener;
 import org.apache.hadoop.hbase.replication.regionserver.RegionReplicaReplicationEndpoint;
 import org.apache.hadoop.hbase.zookeeper.ZKConfig;
 import org.apache.hadoop.hdfs.util.ByteArrayManager;
@@ -69,12 +74,6 @@ public class ServerRegionReplicaUtil extends RegionReplicaUtil {
     = "hbase.region.meta.replica.replication.enabled";
   private static final boolean DEFAULT_META_REGION_REPLICA_REPLICATION = false;
 
-  /**
-   * Peer name we pass internally if {@link #META_REGION_REPLICA_REPLICATION_CONF_KEY} is
-   * set in Configuration adding and disabling replication source.
-   */
-  private static final String META_REGION_REPLICA_REPLICATION_PEER =
-    "__meta_region_replica_replication__";
 
   /**
    * Enables or disables refreshing store files of secondary region replicas when the memory is
@@ -233,10 +232,4 @@ public class ServerRegionReplicaUtil extends RegionReplicaUtil {
       DEFAULT_REGION_REPLICA_STORE_FILE_REFRESH_MEMSTORE_MULTIPLIER);
   }
 
-  /**
-   * @return True if queueId is the internal meta region replica replication queue peer marker.
-   */
-  public static boolean isMetaRegionReplicaReplicationPeer(String queueId) {
-    return ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_PEER.equals(queueId);
-  }
 }

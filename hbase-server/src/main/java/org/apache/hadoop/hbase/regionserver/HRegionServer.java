@@ -2212,9 +2212,9 @@ public class HRegionServer extends Thread implements
         this.walRoller.addWAL(wal);
       }
       return wal;
-    }catch (FailedCloseWALAfterInitializedErrorException ex) {
+    } catch (FailedCloseWALAfterInitializedErrorException ex) {
       // see HBASE-21751 for details
-      abort("wal can not clean up after init failed", ex);
+      abort("WAL can not clean up after init failed", ex);
       throw ex;
     }
   }
@@ -2223,7 +2223,7 @@ public class HRegionServer extends Thread implements
     return walRoller;
   }
 
-  WALFactory getWalFactory() {
+  public WALFactory getWalFactory() {
     return walFactory;
   }
 

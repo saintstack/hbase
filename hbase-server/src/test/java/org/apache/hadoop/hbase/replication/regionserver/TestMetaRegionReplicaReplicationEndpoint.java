@@ -18,20 +18,37 @@
 package org.apache.hadoop.hbase.replication.regionserver;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HBaseClassTestRule;
 import org.apache.hadoop.hbase.HBaseTestingUtility;
 import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.MiniHBaseCluster;
 import org.apache.hadoop.hbase.ReplicationPeerNotFoundException;
 import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.Waiter;
+import org.apache.hadoop.hbase.client.Get;
+import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.ResultScanner;
+import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.client.TableDescriptorBuilder;
+import org.apache.hadoop.hbase.regionserver.HRegion;
+import org.apache.hadoop.hbase.regionserver.HRegionServer;
+import org.apache.hadoop.hbase.regionserver.Region;
+import org.apache.hadoop.hbase.regionserver.RegionScanner;
 import org.apache.hadoop.hbase.replication.ReplicationPeerConfig;
 import org.apache.hadoop.hbase.replication.ReplicationPeerConfigBuilder;
 import org.apache.hadoop.hbase.testclassification.FlakeyTests;
 import org.apache.hadoop.hbase.testclassification.LargeTests;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ServerRegionReplicaUtil;
 import org.apache.hadoop.hbase.zookeeper.ZKConfig;
 import org.junit.AfterClass;
@@ -56,7 +73,7 @@ public class TestMetaRegionReplicaReplicationEndpoint {
       HBaseClassTestRule.forClass(TestMetaRegionReplicaReplicationEndpoint.class);
   private static final Logger LOG =
       LoggerFactory.getLogger(TestMetaRegionReplicaReplicationEndpoint.class);
-  private static final int NB_SERVERS = 2;
+  private static final int NB_SERVERS = 3;
   private static final HBaseTestingUtility HTU = new HBaseTestingUtility();
 
   @Rule
@@ -75,8 +92,12 @@ public class TestMetaRegionReplicaReplicationEndpoint {
     conf.setLong(HConstants.THREAD_WAKE_FREQUENCY, 100);
     conf.setInt("replication.stats.thread.period.seconds", 5);
     conf.setBoolean("hbase.tests.use.shortcircuit.reads", false);
-    conf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 5); // less number of retries is needed
+    conf.setInt(HConstants.HBASE_CLIENT_RETRIES_NUMBER, 5); // less number of retries needed
     conf.setInt(HConstants.HBASE_CLIENT_SERVERSIDE_RETRIES_MULTIPLIER, 1);
+    // Enable hbase:meta replication.
+    conf.setBoolean(ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_CONF_KEY, true);
+    // Set hbase:meta replicas to be 3.
+    conf.setInt(HConstants.META_REPLICAS_NUM, NB_SERVERS);
     HTU.startMiniCluster(NB_SERVERS);
   }
 
@@ -85,91 +106,99 @@ public class TestMetaRegionReplicaReplicationEndpoint {
     HTU.shutdownMiniCluster();
   }
 
+  @Test
+  public void testSpecialMetaReplicationPeerCreated() throws IOException, InterruptedException {
+    MiniHBaseCluster cluster = HTU.getMiniHBaseCluster();
+    HRegionServer hrs = cluster.getRegionServer(cluster.getServerHoldingMeta());
+    assertTrue(isMetaRegionReplicaReplicationSource(hrs));
+    // Now move the hbase:meta and make sure the peer is disabled on original server and enabled on
+    // the new server.
+    HRegionServer hrsOther = null;
+    for (int i = 0; i < cluster.getNumLiveRegionServers(); i++) {
+      hrsOther = cluster.getRegionServer(i);
+      if (hrsOther.getServerName().equals(hrs.getServerName())) {
+        hrsOther = null;
+        continue;
+      }
+      break;
+    }
+    assertNotNull(hrsOther);
+    Region meta = null;
+    for (Region region: hrs.getOnlineRegionsLocalContext()) {
+      if (region.getRegionInfo().isMetaRegion()) {
+        meta = region;
+        break;
+      }
+    }
+    assertNotNull(meta);
+    HTU.moveRegionAndWait(meta.getRegionInfo(), hrsOther.getServerName());
+    assertFalse(isMetaRegionReplicaReplicationSource(hrs));
+    assertFalse(isMetaRegionReplicaReplicationSource(hrsOther));
+  }
+
   /**
-   * Modify hbase:meta to add region replicas. Check whether the replication peer is created
-   * and replication started.
+   * @return Whether the special meta region replica peer is enabled on <code>hrs</code>
+   */
+  private boolean isMetaRegionReplicaReplicationSource(HRegionServer hrs) {
+    boolean on = false;
+    for (ReplicationSourceInterface rsi:
+      hrs.getReplicationSourceService().getReplicationManager().getSources()) {
+      on |= ReplicationSourceManager.META_REGION_REPLICA_REPLICATION_SOURCE.equals(rsi.getPeerId());
+    }
+    return on;
+  }
+
+  /**
+   * Test meta region replica replication. Create some tables and see if replicas pick up the
+   * additions.
    */
   @Test
-  public void testMetaRegionReplicaReplicationPeerIsCreated() throws IOException {
-    
+  public void testHBaseMetaReplicates() throws Exception {
+    HTU.createTable(TableName.valueOf(this.name.getMethodName()), HConstants.CATALOG_FAMILY,
+      Arrays.copyOfRange(HBaseTestingUtility.KEYS, 1, HBaseTestingUtility.KEYS.length));
+    verifyReplication(TableName.META_TABLE_NAME, NB_SERVERS, HTU.KEYS);
   }
-//
-//  public void testRegionReplicaReplication(int regionReplication) throws Exception {
-//    // test region replica replication. Create a table with single region, write some data
-//    // ensure that data is replicated to the secondary region
-//    TableName tableName = TableName.valueOf("testRegionReplicaReplicationWithReplicas_"
-//        + regionReplication);
-//    HTableDescriptor htd = HTU.createTableDescriptor(tableName.toString());
-//    htd.setRegionReplication(regionReplication);
-//    HTU.getAdmin().createTable(htd);
-//    TableName tableNameNoReplicas =
-//        TableName.valueOf("testRegionReplicaReplicationWithReplicas_NO_REPLICAS");
-//    HTU.deleteTableIfAny(tableNameNoReplicas);
-//    HTU.createTable(tableNameNoReplicas, HBaseTestingUtility.fam1);
-//
-//    Connection connection = ConnectionFactory.createConnection(HTU.getConfiguration());
-//    Table table = connection.getTable(tableName);
-//    Table tableNoReplicas = connection.getTable(tableNameNoReplicas);
-//
-//    try {
-//      // load some data to the non-replicated table
-//      HTU.loadNumericRows(tableNoReplicas, HBaseTestingUtility.fam1, 6000, 7000);
-//
-//      // load the data to the table
-//      HTU.loadNumericRows(table, HBaseTestingUtility.fam1, 0, 1000);
-//
-//      verifyReplication(tableName, regionReplication, 0, 1000);
-//
-//    } finally {
-//      table.close();
-//      tableNoReplicas.close();
-//      HTU.deleteTableIfAny(tableNameNoReplicas);
-//      connection.close();
-//    }
-//  }
-//
-//  private void verifyReplication(TableName tableName, int regionReplication,
-//      final int startRow, final int endRow) throws Exception {
-//    verifyReplication(tableName, regionReplication, startRow, endRow, true);
-//  }
-//
-//  private void verifyReplication(TableName tableName, int regionReplication,
-//      final int startRow, final int endRow, final boolean present) throws Exception {
-//    // find the regions
-//    final Region[] regions = new Region[regionReplication];
-//
-//    for (int i=0; i < NB_SERVERS; i++) {
-//      HRegionServer rs = HTU.getMiniHBaseCluster().getRegionServer(i);
-//      List<HRegion> onlineRegions = rs.getRegions(tableName);
-//      for (HRegion region : onlineRegions) {
-//        regions[region.getRegionInfo().getReplicaId()] = region;
-//      }
-//    }
-//
-//    for (Region region : regions) {
-//      assertNotNull(region);
-//    }
-//
-//    for (int i = 1; i < regionReplication; i++) {
-//      final Region region = regions[i];
-//      // wait until all the data is replicated to all secondary regions
-//      Waiter.waitFor(HTU.getConfiguration(), 90000, 1000, new Waiter.Predicate<Exception>() {
-//        @Override
-//        public boolean evaluate() throws Exception {
-//          LOG.info("verifying replication for region replica:" + region.getRegionInfo());
-//          try {
-//            HTU.verifyNumericRows(region, HBaseTestingUtility.fam1, startRow, endRow, present);
-//          } catch(Throwable ex) {
-//            LOG.warn("Verification from secondary region is not complete yet", ex);
-//            // still wait
-//            return false;
-//          }
-//          return true;
-//        }
-//      });
-//    }
-//  }
-//
+
+  private void verifyReplication(TableName tableName, int regionReplication, final byte [][] rows)
+      throws Exception {
+    final Region[] regions = new Region[regionReplication];
+    for (int i = 0; i < NB_SERVERS; i++) {
+      HRegionServer rs = HTU.getMiniHBaseCluster().getRegionServer(i);
+      List<HRegion> onlineRegions = rs.getRegions(tableName);
+      for (HRegion region : onlineRegions) {
+        regions[region.getRegionInfo().getReplicaId()] = region;
+      }
+    }
+
+    for (Region region : regions) {
+      assertNotNull(region);
+    }
+
+    for (int i = 1; i < regionReplication; i++) {
+      final Region region = regions[i];
+      // wait until all the data is replicated to all secondary regions
+      Waiter.waitFor(HTU.getConfiguration(), 90000, 1000, new Waiter.Predicate<Exception>() {
+        @Override
+        public boolean evaluate() throws Exception {
+          LOG.info("Verifying replication for region replica {}", region.getRegionInfo());
+          int count = 0;
+          try (RegionScanner rs = region.getScanner(new Scan())) {
+            List<Cell> cells = new ArrayList<>();
+            while (rs.next(cells)) {
+              cells.clear();
+              count++;
+            }
+            return count == rows.length;
+          } catch(Throwable ex) {
+            LOG.warn("Verification from secondary region is not complete yet", ex);
+            // still wait
+            return false;
+          }
+        }
+      });
+    }
+  }
+
 //  @Test
 //  public void testRegionReplicaReplicationWith2Replicas() throws Exception {
 //    testRegionReplicaReplication(2);
@@ -183,38 +212,6 @@ public class TestMetaRegionReplicaReplicationEndpoint {
 //  @Test
 //  public void testRegionReplicaReplicationWith10Replicas() throws Exception {
 //    testRegionReplicaReplication(10);
-//  }
-//
-//  @Test
-//  public void testRegionReplicaWithoutMemstoreReplication() throws Exception {
-//    int regionReplication = 3;
-//    final TableName tableName = TableName.valueOf(name.getMethodName());
-//    HTableDescriptor htd = HTU.createTableDescriptor(tableName);
-//    htd.setRegionReplication(regionReplication);
-//    htd.setRegionMemstoreReplication(false);
-//    HTU.getAdmin().createTable(htd);
-//
-//    Connection connection = ConnectionFactory.createConnection(HTU.getConfiguration());
-//    Table table = connection.getTable(tableName);
-//    try {
-//      // write data to the primary. The replicas should not receive the data
-//      final int STEP = 100;
-//      for (int i = 0; i < 3; ++i) {
-//        final int startRow = i * STEP;
-//        final int endRow = (i + 1) * STEP;
-//        LOG.info("Writing data from " + startRow + " to " + endRow);
-//        HTU.loadNumericRows(table, HBaseTestingUtility.fam1, startRow, endRow);
-//        verifyReplication(tableName, regionReplication, startRow, endRow, false);
-//
-//        // Flush the table, now the data should show up in the replicas
-//        LOG.info("flushing table");
-//        HTU.flush(tableName);
-//        verifyReplication(tableName, regionReplication, 0, endRow, true);
-//      }
-//    } finally {
-//      table.close();
-//      connection.close();
-//    }
 //  }
 //
 //  @Test

@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -122,10 +122,9 @@ public class UnassignRegionHandler extends EventHandler {
     rs.removeRegion(region, destination);
     if (ServerRegionReplicaUtil.isMetaRegionReplicaReplicationEnabled(rs.getConfiguration(),
         region.getTableDescriptor().getTableName())) {
-      // If hbase:meta read replicas enabled, remove special peer for hbase:meta Regions only.
-      // See assign region handler where we install the special peer on open.
-      rs.getReplicationSourceService().getReplicationManager().
-        removeSource(ServerRegionReplicaUtil.META_REGION_REPLICA_REPLICATION_PEER);
+      // If hbase:meta read replicas enabled, remove replication source for hbase:meta Regions.
+      // See assign region handler where we add the replication source on open.
+      rs.getReplicationSourceService().getReplicationManager().removeHBaseMetaSource();
     }
     if (!rs.reportRegionStateTransition(
       new RegionStateTransitionContext(TransitionCode.CLOSED, HConstants.NO_SEQNUM, closeProcId,

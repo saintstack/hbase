@@ -983,8 +983,7 @@ class ConnectionImplementation implements ClusterConnection, Closeable {
    * Return null if no suitable region is located.
    * @return Null or region location found in cache.
    */
-  RegionLocations getCachedLocation(final TableName tableName,
-      final byte [] row) {
+  RegionLocations getCachedLocation(final TableName tableName, final byte [] row) {
     return metaCache.getCachedLocation(tableName, row);
   }
 

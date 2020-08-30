@@ -138,7 +138,7 @@ class ReplicationSourceWALReader extends Thread {
           if (batch != null) {
             // need to propagate the batch even it has no entries since it may carry the last
             // sequence id information for serial replication.
-            LOG.debug("Read {} WAL entries eligible for replication", batch.getNbEntries());
+            LOG.debug("Read {} WAL entrie(s) eligible for replication", batch.getNbEntries());
             entryBatchQueue.put(batch);
             sleepMultiplier = 1;
           } else { // got no entries and didn't advance position in WAL
