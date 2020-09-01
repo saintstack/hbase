@@ -1,4 +1,4 @@
-/**
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -16,9 +16,7 @@
  * limitations under the License.
  */
 package org.apache.hadoop.hbase.replication.regionserver;
-
 import java.util.OptionalLong;
-
 import org.apache.hadoop.fs.Path;
 import org.apache.yetus.audience.InterfaceAudience;
 
@@ -29,6 +27,5 @@ import org.apache.yetus.audience.InterfaceAudience;
 @InterfaceAudience.Private
 @FunctionalInterface
 public interface WALFileLengthProvider {
-
   OptionalLong getLogFileSizeIfBeingWritten(Path path);
 }

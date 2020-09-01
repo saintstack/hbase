@@ -99,6 +99,8 @@ public class TestMetaRegionReplicaReplicationEndpoint {
     // Set hbase:meta replicas to be 3.
     conf.setInt(HConstants.META_REPLICAS_NUM, NB_SERVERS);
     HTU.startMiniCluster(NB_SERVERS);
+    HTU.waitFor(30000,
+      () -> HTU.getMiniHBaseCluster().getRegions(TableName.META_TABLE_NAME).size() >= NB_SERVERS);
   }
 
   @AfterClass
@@ -154,13 +156,23 @@ public class TestMetaRegionReplicaReplicationEndpoint {
    */
   @Test
   public void testHBaseMetaReplicates() throws Exception {
-    HTU.createTable(TableName.valueOf(this.name.getMethodName()), HConstants.CATALOG_FAMILY,
+    HTU.createTable(TableName.valueOf(this.name.getMethodName() + "_0"), HConstants.CATALOG_FAMILY,
       Arrays.copyOfRange(HBaseTestingUtility.KEYS, 1, HBaseTestingUtility.KEYS.length));
     verifyReplication(TableName.META_TABLE_NAME, NB_SERVERS, HTU.KEYS);
   }
 
-  private void verifyReplication(TableName tableName, int regionReplication, final byte [][] rows)
-      throws Exception {
+  /**
+   * Test meta region replica replication. Create some tables and see if replicas pick up the
+   * additions.
+   */
+  @Test
+  public void testHBaseMetaReplicatesOneRow() throws Exception {
+    HTU.createTable(TableName.valueOf(this.name.getMethodName()), HConstants.CATALOG_FAMILY);
+    verifyReplication(TableName.META_TABLE_NAME, NB_SERVERS,
+      new byte [][] {HTU.getMetaTableRows().get(0)});
+  }
+
+  private void verifyReplication(TableName tableName, int regionReplication, final byte [][] rows) {
     final Region[] regions = new Region[regionReplication];
     for (int i = 0; i < NB_SERVERS; i++) {
       HRegionServer rs = HTU.getMiniHBaseCluster().getRegionServer(i);

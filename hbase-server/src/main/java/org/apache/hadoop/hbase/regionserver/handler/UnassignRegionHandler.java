@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.ServerName;
+import org.apache.hadoop.hbase.client.RegionReplicaUtil;
 import org.apache.hadoop.hbase.executor.EventHandler;
 import org.apache.hadoop.hbase.executor.EventType;
 import org.apache.hadoop.hbase.regionserver.HRegion;
@@ -122,9 +123,11 @@ public class UnassignRegionHandler extends EventHandler {
     rs.removeRegion(region, destination);
     if (ServerRegionReplicaUtil.isMetaRegionReplicaReplicationEnabled(rs.getConfiguration(),
         region.getTableDescriptor().getTableName())) {
-      // If hbase:meta read replicas enabled, remove replication source for hbase:meta Regions.
-      // See assign region handler where we add the replication source on open.
-      rs.getReplicationSourceService().getReplicationManager().removeHBaseMetaSource();
+      if (RegionReplicaUtil.isDefaultReplica(region.getRegionInfo().getReplicaId())) {
+        // If hbase:meta read replicas enabled, remove replication source for hbase:meta Regions.
+        // See assign region handler where we add the replication source on open.
+        rs.getReplicationSourceService().getReplicationManager().removeHBaseMetaSource();
+      }
     }
     if (!rs.reportRegionStateTransition(
       new RegionStateTransitionContext(TransitionCode.CLOSED, HConstants.NO_SEQNUM, closeProcId,

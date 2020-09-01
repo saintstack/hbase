@@ -479,8 +479,19 @@ public class ReplicationSourceManager implements ReplicationListener {
     // Install WAL Actions listener so we get name of WAL that is coming online and so we can watch
     // its edits as they come in.
     // TODO: Make this BETTER. Cast to HRegionServer is ugly.
-    WALProvider provider = ((HRegionServer)this.server).getWalFactory().getMetaProvider();
-    provider.addWALActionsListener(new ReplicationSourceWALActionListener(conf, this));
+    HRegionServer hrs = (HRegionServer) this.server;
+    // If no provider, create one. Idea is to test for its presence first by calling
+    // getMetaWALProvider and then creating it if not present by calling getMetaProvider. We are
+    // trying to avoid adding a listener every time the hbase:meta gets moved to this server; we
+    // want to add it once only (once the meta wal provider is created, it lives for the life of
+    // the process). There is no locking here. Presumption is that this is only place
+    // where meta provider is created and in a single thread only; higher levels ensure only
+    // one hbase:meta OPENER at a time.
+    WALProvider provider = hrs.getWalFactory().getMetaWALProvider();
+    if (provider == null) {
+      provider = hrs.getWalFactory().getMetaProvider();
+      provider.addWALActionsListener(new ReplicationSourceWALActionListener(conf, this));
+    }
     return addSource(new ReplicationPeerImpl(this.server.getConfiguration(),
       META_REGION_REPLICA_REPLICATION_SOURCE, true,
       ReplicationPeerConfig.newBuilder().setClusterKey(ZKConfig.getZooKeeperClusterKey(conf)).

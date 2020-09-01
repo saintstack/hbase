@@ -216,7 +216,8 @@ public class ZNodePaths {
    * @return True if meta znode.
    */
   public boolean isMetaZNodePrefix(String znode) {
-    return znode != null && znode.startsWith(this.metaZNodePrefix);
+    boolean b = znode != null && znode.startsWith(this.metaZNodePrefix);
+    return b;
   }
 
   /**

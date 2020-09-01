@@ -194,9 +194,8 @@ class ZKConnectionRegistry implements ConnectionRegistry {
   public CompletableFuture<RegionLocations> getMetaRegionLocations() {
     CompletableFuture<RegionLocations> future = new CompletableFuture<>();
     addListener(
-      zk.list(znodePaths.baseZNode)
-        .thenApply(children -> children.stream()
-          .filter(c -> this.znodePaths.isMetaZNodePrefix(c)).collect(Collectors.toList())),
+      zk.list(znodePaths.baseZNode).thenApply(children -> children.stream().
+        filter(c -> this.znodePaths.isMetaZNodePrefix(c)).collect(Collectors.toList())),
       (metaReplicaZNodes, error) -> {
         if (error != null) {
           future.completeExceptionally(error);

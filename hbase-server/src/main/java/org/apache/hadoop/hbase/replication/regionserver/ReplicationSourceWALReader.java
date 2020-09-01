@@ -138,7 +138,7 @@ class ReplicationSourceWALReader extends Thread {
           if (batch != null) {
             // need to propagate the batch even it has no entries since it may carry the last
             // sequence id information for serial replication.
-            LOG.debug("Read {} WAL entrie(s) eligible for replication", batch.getNbEntries());
+            LOG.debug("Read {} WAL batch entry(s) eligible for replication", batch.getNbEntries());
             entryBatchQueue.put(batch);
             sleepMultiplier = 1;
           } else { // got no entries and didn't advance position in WAL
@@ -169,7 +169,7 @@ class ReplicationSourceWALReader extends Thread {
       LOG.debug("Edit null or empty for entry {} ", entry);
       return false;
     }
-    LOG.debug("updating TimeStampOfLastAttempted to {}, from entry {}, for source queue: {}",
+    LOG.debug("Updating timestamp of last attempt to {} for entry {} for source queue {}",
         entry.getKey().getWriteTime(), entry.getKey(), this.source.getQueueId());
     long entrySize = getEntrySizeIncludeBulkLoad(entry);
     long entrySizeExcludeBulkLoad = getEntrySizeExcludeBulkLoad(entry);

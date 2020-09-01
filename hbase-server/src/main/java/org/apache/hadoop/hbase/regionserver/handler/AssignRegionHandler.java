@@ -24,6 +24,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HConstants;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.RegionReplicaUtil;
 import org.apache.hadoop.hbase.client.TableDescriptor;
 import org.apache.hadoop.hbase.executor.EventHandler;
 import org.apache.hadoop.hbase.executor.EventType;
@@ -137,8 +138,10 @@ public class AssignRegionHandler extends EventHandler {
       Configuration conf = rs.getConfiguration();
       TableName tn = htd.getTableName();
       if (ServerRegionReplicaUtil.isMetaRegionReplicaReplicationEnabled(conf, tn)) {
-        // Add the hbase:meta replication source.
-        rs.getReplicationSourceService().getReplicationManager().addHBaseMetaSource();
+        if (RegionReplicaUtil.isDefaultReplica(this.regionInfo.getReplicaId())) {
+          // Add the hbase:meta replication source on replica zero/default.
+          rs.getReplicationSourceService().getReplicationManager().addHBaseMetaSource();
+        }
       }
       region = HRegion.openHRegion(regionInfo, htd, rs.getWAL(regionInfo), conf, rs, null);
     } catch (IOException e) {
