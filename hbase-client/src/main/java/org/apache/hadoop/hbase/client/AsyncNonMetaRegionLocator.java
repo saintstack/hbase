@@ -317,8 +317,8 @@ class AsyncNonMetaRegionLocator {
   private boolean onScanNext(TableName tableName, LocateRequest req, Result result) {
     RegionLocations locs = MetaTableAccessor.getRegionLocations(result);
     if (LOG.isDebugEnabled()) {
-      LOG.debug("The fetched location of '{}', row='{}', locateType={} is {}", tableName,
-        Bytes.toStringBinary(req.row), req.locateType, locs);
+      LOG.debug("row={} location={}, locateType={}",
+        Bytes.toStringBinary(req.row), locs, req.locateType);
     }
     // remove HRegionLocation with null location, i.e, getServerName returns null.
     if (locs != null) {

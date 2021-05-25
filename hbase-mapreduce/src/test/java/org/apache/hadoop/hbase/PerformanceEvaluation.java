@@ -1,5 +1,4 @@
-/**
- *
+/*
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
  * distributed with this work for additional information
@@ -25,6 +24,7 @@ import java.io.PrintStream;
 import java.lang.reflect.Constructor;
 import java.math.BigDecimal;
 import java.math.MathContext;
+import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -42,6 +42,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
@@ -51,6 +53,7 @@ import org.apache.hadoop.hbase.client.Admin;
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.AsyncConnection;
 import org.apache.hadoop.hbase.client.AsyncTable;
+import org.apache.hadoop.hbase.client.AsyncTableRegionLocator;
 import org.apache.hadoop.hbase.client.BufferedMutator;
 import org.apache.hadoop.hbase.client.BufferedMutatorParams;
 import org.apache.hadoop.hbase.client.Connection;
@@ -105,7 +108,6 @@ import org.apache.htrace.core.TraceScope;
 import org.apache.yetus.audience.InterfaceAudience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import org.apache.hbase.thirdparty.com.google.common.base.MoreObjects;
 import org.apache.hbase.thirdparty.com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.apache.hbase.thirdparty.com.google.gson.Gson;
@@ -186,6 +188,8 @@ public class PerformanceEvaluation extends Configured implements Tool {
       "Run sequential write test");
     addCommandDescriptor(ScanTest.class, "scan",
       "Run scan test (read every row)");
+    addCommandDescriptor(MetaScanTest.class, "metaScan",
+      "Runs async meta location lookup");
     addCommandDescriptor(FilteredScanTest.class, "filterScan",
       "Run scan test using a filter to find a specific row based on it's value " +
       "(make sure to use --rows=20)");
@@ -280,11 +284,11 @@ public class PerformanceEvaluation extends Configured implements Tool {
     /** configuration parameter name that contains the PE impl */
     public static final String PE_KEY = "EvaluationMapTask.performanceEvalImpl";
 
-    private Class<? extends Test> cmd;
+    private Class<? extends TestBase> cmd;
 
     @Override
     protected void setup(Context context) throws IOException, InterruptedException {
-      this.cmd = forName(context.getConfiguration().get(CMD_KEY), Test.class);
+      this.cmd = forName(context.getConfiguration().get(CMD_KEY), TestBase.class);
 
       // this is required so that extensions of PE are instantiated within the
       // map reduce task...
@@ -538,8 +542,12 @@ public class PerformanceEvaluation extends Configured implements Tool {
     }
 
     for (int i = 0; i < opts.connCount; i++) {
-      cons[i].close();
-      asyncCons[i].close();
+      if (cons[i] != null) {
+        cons[i].close();
+      }
+      if (asyncCons[i] != null) {
+        asyncCons[i].close();
+      }
     }
 
     return results;
@@ -1220,7 +1228,9 @@ public class PerformanceEvaluation extends Configured implements Tool {
     }
 
     void updateValueSize(final int valueSize) {
-      if (!isRandomValueSize()) return;
+      if (!isRandomValueSize()) {
+        return;
+      }
       this.valueSizeHistogram.update(valueSize);
     }
 
@@ -1989,6 +1999,7 @@ public class PerformanceEvaluation extends Configured implements Tool {
     }
   }
 
+
   static class RandomWriteTest extends SequentialWriteTest {
     RandomWriteTest(Connection con, TestOptions options, Status status) {
       super(con, options, status);
@@ -2042,6 +2053,42 @@ public class PerformanceEvaluation extends Configured implements Tool {
       }
       Result r = testScanner.next();
       updateValueSize(r);
+      return true;
+    }
+  }
+
+  /**
+   * Run location lookups against hbase:meta.
+   * It does the lookups asynchronously.
+   */
+  static class MetaScanTest extends AsyncTest {
+    private static final Random rnd = new SecureRandom();
+    private AsyncTableRegionLocator regionLocator;
+
+    MetaScanTest(AsyncConnection con, TestOptions options, Status status) {
+      super(con, options, status);
+    }
+
+    @Override
+    void onStartup() throws IOException {
+      if (this.connection == null) {
+        throw new IOException("Connection is null");
+      }
+      TableName tableName = TableName.valueOf(this.opts.tableName);
+      this.regionLocator = this.connection.getRegionLocator(tableName);
+    }
+
+    @Override
+    void onTakedown() throws IOException {}
+
+    @Override
+    boolean testRow(final int i, final long startTime) throws IOException {
+      byte [] randomRow = getRandomRow(this.rnd, this.opts.totalRows);
+      try {
+        this.regionLocator.getRegionLocation(randomRow).get(15, TimeUnit.SECONDS);
+      } catch (InterruptedException | ExecutionException | TimeoutException e) {
+        throw new IOException(e);
+      }
       return true;
     }
   }
@@ -2391,8 +2438,11 @@ public class PerformanceEvaluation extends Configured implements Tool {
   static RunResult runOneClient(final Class<? extends TestBase> cmd, Configuration conf,
       Connection con, AsyncConnection asyncCon, TestOptions opts, final Status status)
       throws IOException, InterruptedException {
+    String log = "Start " + cmd + " at offset " + opts.startRow + " for "
+      + opts.perClientRunRows + " rows";
     status.setStatus("Start " + cmd + " at offset " + opts.startRow + " for "
         + opts.perClientRunRows + " rows");
+    LOG.info(log + "; con=" + con + ", asyncCon=" + asyncCon);
     long totalElapsedTime;
 
     final TestBase t;
@@ -2477,7 +2527,7 @@ public class PerformanceEvaluation extends Configured implements Tool {
     System.err.println(" nomapred        Run multiple clients using threads " +
       "(rather than use mapreduce)");
     System.err.println(" oneCon          all the threads share the same connection. Default: False");
-    System.err.println(" connCount          connections all threads share. "
+    System.err.println(" connCount       connections all threads share. "
         + "For example, if set to 2, then all thread share 2 connection. "
         + "Default: depend on oneCon parameter. if oneCon set to true, then connCount=1, "
         + "if not, connCount=thread number");
