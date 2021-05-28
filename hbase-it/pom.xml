@@ -26,11 +26,9 @@
     <version>3.0.0-SNAPSHOT</version>
     <relativePath>../hbase-build-configuration</relativePath>
   </parent>
-
   <artifactId>hbase-it</artifactId>
   <name>Apache HBase - Integration Tests</name>
   <description>Integration and System tests for HBase</description>
-
   <properties>
     <!-- Test inclusion patterns used by failsafe configuration -->
     <unittest.include>**/Test*.java</unittest.include>
@@ -39,7 +37,6 @@
     <failsafe.Xmx>4g</failsafe.Xmx>
     <!-- To run a single integration test, use -Dit.test=IntegrationTestXXX -->
   </properties>
-
   <build>
     <testResources>
       <testResource>

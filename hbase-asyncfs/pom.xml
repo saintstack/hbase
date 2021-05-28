@@ -27,7 +27,6 @@
     <version>3.0.0-SNAPSHOT</version>
     <relativePath>../hbase-build-configuration</relativePath>
   </parent>
-
   <artifactId>hbase-asyncfs</artifactId>
   <name>Apache HBase - Asynchronous FileSystem</name>
   <description>HBase Asynchronous FileSystem Implementation for WAL</description>
